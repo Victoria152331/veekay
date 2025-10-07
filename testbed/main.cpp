@@ -10,6 +10,8 @@
 #include <imgui.h>
 #include <vulkan/vulkan_core.h>
 
+#define M_PI 3.14159265358979323846
+
 namespace {
 
 constexpr float camera_fov = 70.0f;
