@@ -49,13 +49,31 @@ VkPipelineLayout pipeline_layout;
 VkPipeline pipeline;
 
 // NOTE: Declare buffers and other variables here
-VulkanBuffer vertex_buffer;
-VulkanBuffer index_buffer;
+constexpr int number_of_objects = 3;
+VulkanBuffer vertex_buffers[number_of_objects];
+VulkanBuffer index_buffers[number_of_objects];
 
-Vector model_position = {0.0f, 0.0f, 5.0f};
-float model_rotation;
-Vector model_color = {0.5f, 1.0f, 0.7f };
-bool model_spin = true;
+constexpr int segments_of_sphere = 10;
+int numbers_of_indices[] = {36, 18, 600};
+
+Vector model_positions[]= {
+	{0.0f, 0.0f, 5.0f},
+	{-4.0f, 0.0f, 5.0f},
+	{4.0f, 0.0f, 5.0f}
+};
+float model_rotations[3];
+Vector model_colors[] = {
+	{0.5f, 1.0f, 0.7f},
+	{1.0f, 0.7f, 0.5f},
+	{0.3f, 0.7f, 1.0f}
+};
+bool model_spins[] = {true, true, true};
+bool model_rev[] = {false, false, false};
+
+bool use_perspective = true;
+float ortho_size = 5.0f;
+
+// Matrix functions
 
 Matrix identity() {
 	Matrix result{};
@@ -84,6 +102,19 @@ Matrix projection(float fov, float aspect_ratio, float near, float far) {
 	return result;
 }
 
+Matrix orthographic(float left, float right, float bottom, float top, float near, float far) {
+    Matrix result = identity();
+
+    result.m[0][0] = 2.0f / (right - left);
+    result.m[1][1] = 2.0f / (top - bottom);
+    result.m[2][2] = 1.0f / (far - near);
+    result.m[3][0] = -(right + left) / (right - left);
+    result.m[3][1] = -(top + bottom) / (top - bottom);
+    result.m[3][2] = -near / (far - near);
+
+    return result;
+}
+
 Matrix translation(Vector vector) {
 	Matrix result = identity();
 
@@ -94,7 +125,7 @@ Matrix translation(Vector vector) {
 	return result;
 }
 
-Matrix rotation(Vector axis, float angle) {
+Matrix rotation(Vector axis, float angle, bool rev) {
 	Matrix result{};
 
 	float length = sqrtf(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
@@ -103,8 +134,10 @@ Matrix rotation(Vector axis, float angle) {
 	axis.y /= length;
 	axis.z /= length;
 
-	float sina = sinf(angle);
-	float cosa = cosf(angle);
+	float sign = rev? -1.0f : 1.0f;
+
+	float sina = sinf(angle * sign);
+	float cosa = cosf(angle * sign);
 	float cosv = 1.0f - cosa;
 
 	result.m[0][0] = (axis.x * axis.x * cosv) + cosa;
@@ -256,6 +289,40 @@ void destroyBuffer(const VulkanBuffer& buffer) {
 
 	vkFreeMemory(device, buffer.memory, nullptr);
 	vkDestroyBuffer(device, buffer.buffer, nullptr);
+}
+
+void generateSphere(float radius, int segments, Vertex* vertices, uint32_t* indices) {
+    const float PI = 3.14159265359f;
+    
+    for (int i = 0; i <= segments; i++) {
+        float phi = i * PI / segments;
+        
+        for (int j = 0; j <= segments; j++) {
+            float theta = j * 2 * PI / segments;
+            
+            Vector pos;
+            pos.x = radius * sin(phi) * cos(theta);
+            pos.y = radius * cos(phi);
+            pos.z = radius * sin(phi) * sin(theta);
+            
+            vertices[i * (segments + 1) + j] = {pos};
+        }
+    }
+    
+    for (int i = 0; i < segments; i++) {
+        for (int j = 0; j < segments; j++) {
+            int first = i * (segments + 1) + j;
+            int second = first + segments + 1;
+            
+            indices[(i * segments + j) * 6] = first;
+            indices[(i * segments + j) * 6 + 1] = first + 1;
+            indices[(i * segments + j) * 6 + 2] = second;
+            
+            indices[(i * segments + j) * 6 + 3] = first + 1;
+            indices[(i * segments + j) * 6 + 4] = second + 1;
+            indices[(i * segments + j) * 6 + 5] = second;
+        }
+    }
 }
 
 void initialize() {
@@ -463,19 +530,64 @@ void initialize() {
 	//  |   `--,   |
 	//  |       \  |
 	// (v3)------(v2)
-	Vertex vertices[] = {
-		{{-1.0f, -1.0f, 0.0f}},
-		{{1.0f, -1.0f, 0.0f}},
-		{{1.0f, 1.0f, 0.0f}},
-		{{-1.0f, 1.0f, 0.0f}},
+	Vertex vertices_1[] = {
+		{{-1.0f, -1.0f, -1.0f}},
+		{{1.0f, -1.0f, -1.0f}},
+		{{1.0f, 1.0f, -1.0f}},
+		{{-1.0f, 1.0f, -1.0f}},
+		{{-1.0f, -1.0f, 1.0f}},
+		{{1.0f, -1.0f, 1.0f}},
+		{{1.0f, 1.0f, 1.0f}},
+		{{-1.0f, 1.0f, 1.0f}},
 	};
 
-	uint32_t indices[] = { 0, 1, 2, 2, 3, 0 };
+	Vertex vertices_2[] = {
+		{{-1.0f, 1.0f, -1.0f}},
+		{{1.0f, 1.0f, -1.0f}},
+		{{1.0f, 1.0f, 1.0f}},
+		{{-1.0f, 1.0f, 1.0f}},
+		{{-0.5f, -1.0f, 0.5f}},
+	};
 
-	vertex_buffer = createBuffer(sizeof(vertices), vertices,
+	uint32_t indices_1[] = {
+		0, 1, 2, 2, 3, 0,
+		1, 5, 6, 6, 2, 1,
+		5, 4, 7, 7, 6, 5,
+		4, 0, 3, 3, 7, 4,
+		1, 0, 4, 4, 5, 1,
+		6, 7, 3, 3, 2, 6
+	};
+
+	uint32_t indices_2[] = {
+		0, 1, 2, 2, 3, 0,
+		0, 4, 1,
+		1, 4, 2,
+		2, 4, 3,
+		3, 4, 0
+	};
+
+
+	Vertex vertices_3 [(segments_of_sphere + 1) * (segments_of_sphere + 1)];
+	uint32_t indices_3 [6 * segments_of_sphere * segments_of_sphere];
+	generateSphere(1.0f, segments_of_sphere, vertices_3, indices_3);
+
+
+	vertex_buffers[0] = createBuffer(sizeof(vertices_1), vertices_1,
 	                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-	index_buffer = createBuffer(sizeof(indices), indices,
+	index_buffers[0] = createBuffer(sizeof(indices_1), indices_1,
+	                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	
+	vertex_buffers[1] = createBuffer(sizeof(vertices_2), vertices_2,
+	                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+	index_buffers[1] = createBuffer(sizeof(indices_2), indices_2,
+	                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+	vertex_buffers[2] = createBuffer(sizeof(vertices_3), vertices_3,
+	                             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+	index_buffers[2] = createBuffer(sizeof(indices_3), indices_3,
 	                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 }
 
@@ -483,8 +595,10 @@ void shutdown() {
 	VkDevice& device = veekay::app.vk_device;
 
 	// NOTE: Destroy resources here, do not cause leaks in your program!
-	destroyBuffer(index_buffer);
-	destroyBuffer(vertex_buffer);
+	for(int i = 0; i < number_of_objects; i++) {
+		destroyBuffer(index_buffers[i]);
+		destroyBuffer(vertex_buffers[i]);
+	}
 
 	vkDestroyPipeline(device, pipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
@@ -494,18 +608,47 @@ void shutdown() {
 
 void update(double time) {
 	ImGui::Begin("Controls:");
-	ImGui::InputFloat3("Translation", reinterpret_cast<float*>(&model_position));
-	ImGui::SliderFloat("Rotation", &model_rotation, 0.0f, 2.0f * M_PI);
-	ImGui::Checkbox("Spin?", &model_spin);
-	// TODO: Your GUI stuff here
+	ImGui::Text("Cube:");
+	ImGui::ColorEdit3("ColorC", &(model_colors[0].x));
+	ImGui::InputFloat3("TranslationC", reinterpret_cast<float*>(&(model_positions[0])));
+	ImGui::SliderFloat("RotationC", &model_rotations[0], 0.0f, 2.0f * M_PI);
+	ImGui::Checkbox("PauseC", &model_spins[0]);
+	ImGui::Checkbox("ReverseC", &model_rev[0]);
+
+	ImGui::Text("Pyramid:");
+	ImGui::ColorEdit3("ColorP", &(model_colors[1].x));
+	ImGui::InputFloat3("TranslationP", reinterpret_cast<float*>(&(model_positions[1])));
+	ImGui::SliderFloat("RotationP", &model_rotations[1], 0.0f, 2.0f * M_PI);
+	ImGui::Checkbox("PauseP", &model_spins[1]);
+	ImGui::Checkbox("ReverseP", &model_rev[1]);
+
+	ImGui::Text("Sphere:");
+	ImGui::ColorEdit3("ColorS", &(model_colors[2].x));
+	ImGui::InputFloat3("TranslationS", reinterpret_cast<float*>(&(model_positions[2])));
+	ImGui::SliderFloat("RotationS", &model_rotations[2], 0.0f, 2.0f * M_PI);
+	ImGui::Checkbox("PauseS", &model_spins[2]);
+	ImGui::Checkbox("ReverseS", &model_rev[2]);
+
+	ImGui::Checkbox("Perspective Projection", &use_perspective);
+    if (!use_perspective) {
+        ImGui::SliderFloat("Ortho Size", &ortho_size, 1.0f, 20.0f);
+    }
 	ImGui::End();
 
 	// NOTE: Animation code and other runtime variable updates go here
-	if (model_spin) {
-		model_rotation = float(time);
-	}
+	for(int i = 0; i < number_of_objects; i++) {
+		// if (model_spins[i] && !model_rev[i]) {
+		// 	model_rotations[i] =  fmodf(float(time), 2.0f * M_PI);
+		// } else if (model_spins[i] && model_rev[i]) {
+		// 	model_rotations[i] = 2.0f * M_PI - fmodf(float(time), 2.0f * M_PI);
+		// } 
+		if (model_spins[i]) {
+			model_rotations[i] = float(time);
+		}
 
-	model_rotation = fmodf(model_rotation, 2.0f * M_PI);
+		model_rotations[i] = fmodf(model_rotations[i], 2.0f * M_PI);
+	}
+	
 }
 
 void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
@@ -549,34 +692,45 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
 		// NOTE: Use our new shiny graphics pipeline
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
+		Matrix proj_matrix;
+		float aspect_ratio = float(veekay::app.window_width) / float(veekay::app.window_height);
+		if (use_perspective) {
+			proj_matrix = projection(camera_fov, aspect_ratio, camera_near_plane, camera_far_plane);
+		} else {
+			proj_matrix = orthographic(
+				-ortho_size * aspect_ratio, ortho_size * aspect_ratio, // left, right
+				-ortho_size, ortho_size,                              // bottom, top  
+				camera_near_plane, camera_far_plane                   // near, far
+			);
+		}
+
 
 		// NOTE: Use our quad vertex buffer
-		VkDeviceSize offset = 0;
-		vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffer.buffer, &offset);
+		VkDeviceSize offsets[] = {0, 0, 0};
+		
+		for(int i = 0; i < number_of_objects; i++) {
+			vkCmdBindVertexBuffers(cmd, 0, 1, &vertex_buffers[i].buffer, &(offsets[i]));
+			// NOTE: Use our quad index buffer
+			vkCmdBindIndexBuffer(cmd, index_buffers[i].buffer, offsets[i], VK_INDEX_TYPE_UINT32);
 
-		// NOTE: Use our quad index buffer
-		vkCmdBindIndexBuffer(cmd, index_buffer.buffer, offset, VK_INDEX_TYPE_UINT32);
+			// NOTE: Variables like model_XXX were declared globally
+			ShaderConstants constants{
+				.projection = proj_matrix,
 
-		// NOTE: Variables like model_XXX were declared globally
-		ShaderConstants constants{
-			.projection = projection(
-				camera_fov,
-				float(veekay::app.window_width) / float(veekay::app.window_height),
-				camera_near_plane, camera_far_plane),
+				.transform = multiply(rotation({0.0f, 1.0f, 0.0f}, model_rotations[i], model_rev[i]),
+									translation(model_positions[i])),
 
-			.transform = multiply(rotation({0.0f, 1.0f, 0.0f}, model_rotation),
-			                      translation(model_position)),
+				.color = model_colors[i],
+			};
 
-			.color = model_color,
-		};
+			// NOTE: Update constant memory with new shader constants
+			vkCmdPushConstants(cmd, pipeline_layout,
+							VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+							0, sizeof(ShaderConstants), &constants);
 
-		// NOTE: Update constant memory with new shader constants
-		vkCmdPushConstants(cmd, pipeline_layout,
-		                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-		                   0, sizeof(ShaderConstants), &constants);
-
-		// NOTE: Draw 6 indices (3 vertices * 2 triangles), 1 group, no offsets
-		vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+			// NOTE: Draw 6 indices (3 vertices * 2 triangles), 1 group, no offsets
+			vkCmdDrawIndexed(cmd, numbers_of_indices[i], 1, 0, 0, 0);
+		}
 	}
 
 	vkCmdEndRenderPass(cmd);
