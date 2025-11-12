@@ -111,27 +111,19 @@ float toRadians(float degrees) {
 }
 
 veekay::mat4 Transform::matrix() const {
-	
-	auto s = veekay::mat4::scaling(scale);
-    auto ry = veekay::mat4::rotation({0.0f, 1.0f, 0.0f}, rotation.y);
-    auto rx = veekay::mat4::rotation({1.0f, 0.0f, 0.0f}, rotation.x);
-    auto rz = veekay::mat4::rotation({0.0f, 0.0f, 1.0f}, rotation.z);
-    auto r = ry * rx * rz;
+	// TODO: Scaling and rotation
+
 	auto t = veekay::mat4::translation(position);
 
-	return s * r * t;
+	return t;
 }
 
 veekay::mat4 Camera::view() const {
-	// Inverse rotation (apply after translation)
-	auto ryi = veekay::mat4::rotation({0.0f, 1.0f, 0.0f}, -rotation.y);
-	auto rxi = veekay::mat4::rotation({1.0f, 0.0f, 0.0f}, -rotation.x);
-	auto rzi = veekay::mat4::rotation({0.0f, 0.0f, 1.0f}, -rotation.z);
-	auto r = rzi * rxi * ryi;
+	// TODO: Rotation
 
 	auto t = veekay::mat4::translation(-position);
 
-	return r * t;
+	return t;
 }
 
 veekay::mat4 Camera::view_projection(float aspect_ratio) const {
@@ -656,49 +648,32 @@ void update(double time) {
 		if (mouse::isButtonDown(mouse::Button::left)) {
 			auto move_delta = mouse::cursorDelta();
 
-			// Mouse look: yaw around world Y, pitch around current right
-			const float sensitivity = 0.0035f;
-			const float dx = move_delta.x;
-			const float dy = move_delta.y;
-			camera.rotation.y += -dx * sensitivity;
-			float dp = -dy * sensitivity;
-			float cy = cosf(camera.rotation.y);
-			float sy = sinf(camera.rotation.y);
-			camera.rotation.x += dp * cy;
-			camera.rotation.z += dp * sy;
+			// TODO: Use mouse_delta to update camera rotation
 			
 			auto view = camera.view();
 
-			// Extract camera axes from view (R^T): rows give world-space axes
-			veekay::vec3 right = {view[0][0], view[1][0], view[2][0]};
-			veekay::vec3 up    = {view[0][1], view[1][1], view[2][1]};
-			veekay::vec3 front = {view[0][2], view[1][2], view[2][2]};
-
-			// Horizontal movement should not change Y
-			veekay::vec3 right_flat = {right.x, 0.0f, right.z};
-			veekay::vec3 front_flat = {front.x, 0.0f, front.z};
-			float rl = sqrtf(right_flat.x * right_flat.x + right_flat.z * right_flat.z);
-			if (rl > 1e-6f) { right_flat.x /= rl; right_flat.z /= rl; }
-			float fl = sqrtf(front_flat.x * front_flat.x + front_flat.z * front_flat.z);
-			if (fl > 1e-6f) { front_flat.x /= fl; front_flat.z /= fl; }
+			// TODO: Calculate right, up and front from view matrix
+			veekay::vec3 right = {1.0f, 0.0f, 0.0f};
+			veekay::vec3 up = {0.0f, -1.0f, 0.0f};
+			veekay::vec3 front = {0.0f, 0.0f, 1.0f};
 
 			if (keyboard::isKeyDown(keyboard::Key::w))
-				camera.position += front_flat * 0.1f;
+				camera.position += front * 0.1f;
 
 			if (keyboard::isKeyDown(keyboard::Key::s))
-				camera.position -= front_flat * 0.1f;
+				camera.position -= front * 0.1f;
 
 			if (keyboard::isKeyDown(keyboard::Key::d))
-				camera.position += right_flat * 0.1f;
+				camera.position += right * 0.1f;
 
 			if (keyboard::isKeyDown(keyboard::Key::a))
-				camera.position -= right_flat * 0.1f;
+				camera.position -= right * 0.1f;
 
 			if (keyboard::isKeyDown(keyboard::Key::q))
-				camera.position += veekay::vec3{0.0f, 1.0f, 0.0f} * 0.1f;
+				camera.position += up * 0.1f;
 
 			if (keyboard::isKeyDown(keyboard::Key::z))
-				camera.position -= veekay::vec3{0.0f, 1.0f, 0.0f} * 0.1f;
+				camera.position -= up * 0.1f;
 		}
 	}
 
