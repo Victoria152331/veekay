@@ -74,6 +74,9 @@ struct Camera {
 
 // NOTE: Scene objects
 inline namespace {
+	bool g_use_lookat = false;
+	float g_mouse_sensitivity = 0.12f;
+
 	Camera camera{
 		.position = {0.0f, -0.5f, -3.0f}
 	};
@@ -110,20 +113,75 @@ float toRadians(float degrees) {
 	return degrees * float(M_PI) / 180.0f;
 }
 
+static constexpr veekay::vec3 WORLD_UP{0.0f, -1.0f, 0.0f};
+
+// Базис из yaw/pitch (в градусах), без roll — «игровая» камера
+static void yawPitchBasis(float yawDeg, float pitchDeg,
+                          veekay::vec3& right, veekay::vec3& up, veekay::vec3& front) {
+    float yaw = toRadians(yawDeg);
+    float pitch = toRadians(pitchDeg);
+
+    // фронт: -Z при yaw=0,pitch=0
+    front = veekay::vec3::normalized({
+        std::cosf(pitch) * std::sinf(yaw), // x
+        std::sinf(pitch),                  // y
+        -std::cosf(pitch) * std::cosf(yaw) // z
+    });
+    right = veekay::vec3::normalized(veekay::vec3::cross(front, WORLD_UP));
+    up    = veekay::vec3::cross(right, front);
+}
+
+// Классический lookAt (row-major)
+static veekay::mat4 lookAt(const veekay::vec3& eye,
+                           const veekay::vec3& center,
+                           const veekay::vec3& up) {
+    veekay::vec3 f = veekay::vec3::normalized({center.x-eye.x, center.y-eye.y, center.z-eye.z});
+    veekay::vec3 r = veekay::vec3::normalized(veekay::vec3::cross(f, up));
+    veekay::vec3 u = veekay::vec3::cross(r, f);
+
+    veekay::mat4 m{};
+    m[0][0]= r.x; m[0][1]= u.x; m[0][2]= -f.x; m[0][3]= 0.0f;
+    m[1][0]= r.y; m[1][1]= u.y; m[1][2]= -f.y; m[1][3]= 0.0f;
+    m[2][0]= r.z; m[2][1]= u.z; m[2][2]= -f.z; m[2][3]= 0.0f;
+    m[3][0]= -veekay::vec3::dot(r, eye);
+    m[3][1]= -veekay::vec3::dot(u, eye);
+    m[3][2]=  veekay::vec3::dot(f, eye);
+    m[3][3]=  1.0f;
+    return m;
+}
+
 veekay::mat4 Transform::matrix() const {
-	// TODO: Scaling and rotation
+    using veekay::vec3; using veekay::mat4;
+    mat4 S = mat4::scaling(scale);
 
-	auto t = veekay::mat4::translation(position);
+    // Порядок при row-major с умножением справа налево: R = Rz * Rx * Ry
+    mat4 Rz = mat4::rotation(vec3{0,0,1}, toRadians(rotation.z));
+    mat4 Rx = mat4::rotation(vec3{1,0,0}, toRadians(rotation.x));
+    mat4 Ry = mat4::rotation(vec3{0,1,0}, toRadians(rotation.y));
+    mat4 R  = Rz * Rx * Ry;
 
-	return t;
+    mat4 T = mat4::translation(position);
+
+    return S * R * T;
 }
 
 veekay::mat4 Camera::view() const {
-	// TODO: Rotation
+    veekay::vec3 right, up, front;
+    yawPitchBasis(rotation.y, rotation.x, right, up, front);
 
-	auto t = veekay::mat4::translation(-position);
-
-	return t;
+    if (g_use_lookat) {
+        return lookAt(position, {position.x+front.x, position.y+front.y, position.z+front.z}, up);
+    } else {
+        veekay::mat4 m{};
+        m[0][0]= -right.x; m[0][1]= -up.x; m[0][2]= -front.x; m[0][3]= 0.0f;
+        m[1][0]= -right.y; m[1][1]= -up.y; m[1][2]= -front.y; m[1][3]= 0.0f;
+        m[2][0]= -right.z; m[2][1]= -up.z; m[2][2]= -front.z; m[2][3]= 0.0f;
+        m[3][0]= veekay::vec3::dot(right, position);
+        m[3][1]=  veekay::vec3::dot(up, position);
+        m[3][2]=  veekay::vec3::dot(front, position);
+        m[3][3]=  1.0f;
+        return m;
+    }
 }
 
 veekay::mat4 Camera::view_projection(float aspect_ratio) const {
@@ -640,41 +698,44 @@ void shutdown() {
 
 void update(double time) {
 	ImGui::Begin("Controls:");
+	ImGui::Checkbox("Use LookAt", &g_use_lookat);
+	ImGui::SliderFloat("Mouse sensitivity", &g_mouse_sensitivity, 0.02f, 0.5f, "%.2f deg/pix");
+	ImGui::Text("LMB: look | WASD: move XZ | Q/Z: up/down");
 	ImGui::End();
 
 	if (!ImGui::IsWindowHovered()) {
 		using namespace veekay::input;
 
+		// Поворот мышью при зажатой ЛКМ
 		if (mouse::isButtonDown(mouse::Button::left)) {
-			auto move_delta = mouse::cursorDelta();
+			auto delta = mouse::cursorDelta();
+			camera.rotation.y += delta.x * g_mouse_sensitivity;
+			camera.rotation.x += delta.y * g_mouse_sensitivity;
 
-			// TODO: Use mouse_delta to update camera rotation
-			
-			auto view = camera.view();
-
-			// TODO: Calculate right, up and front from view matrix
-			veekay::vec3 right = {1.0f, 0.0f, 0.0f};
-			veekay::vec3 up = {0.0f, -1.0f, 0.0f};
-			veekay::vec3 front = {0.0f, 0.0f, 1.0f};
-
-			if (keyboard::isKeyDown(keyboard::Key::w))
-				camera.position += front * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::s))
-				camera.position -= front * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::d))
-				camera.position += right * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::a))
-				camera.position -= right * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::q))
-				camera.position += up * 0.1f;
-
-			if (keyboard::isKeyDown(keyboard::Key::z))
-				camera.position -= up * 0.1f;
+			// Кламп pitch, нормализация yaw
+			if (camera.rotation.x >  89.0f) camera.rotation.x =  89.0f;
+			if (camera.rotation.x < -89.0f) camera.rotation.x = -89.0f;
+			if (camera.rotation.y >  180.0f) camera.rotation.y -= 360.0f;
+			if (camera.rotation.y < -180.0f) camera.rotation.y += 360.0f;
 		}
+
+		// Обновляем локальный базис из yaw/pitch
+		veekay::vec3 right, up, front;
+		yawPitchBasis(camera.rotation.y, camera.rotation.x, right, up, front);
+
+		// Движение в плоскости XZ относительно направления взгляда
+		veekay::vec3 front_xz = veekay::vec3::normalized({front.x, 0.0f, front.z});
+		veekay::vec3 right_xz = veekay::vec3::normalized({right.x, 0.0f, right.z});
+		const float move = 0.1f;
+
+		if (keyboard::isKeyDown(keyboard::Key::w)) camera.position -= front_xz * move;
+		if (keyboard::isKeyDown(keyboard::Key::s)) camera.position += front_xz * move;
+		if (keyboard::isKeyDown(keyboard::Key::d)) camera.position += right_xz * move;
+		if (keyboard::isKeyDown(keyboard::Key::a)) camera.position -= right_xz * move;
+
+		// Вертикаль: Q вверх, Z вниз (WORLD_UP = {0,-1,0})
+		if (keyboard::isKeyDown(keyboard::Key::q)) camera.position.y -= move;
+		if (keyboard::isKeyDown(keyboard::Key::z)) camera.position.y += move;
 	}
 
 	float aspect_ratio = float(veekay::app.window_width) / float(veekay::app.window_height);
