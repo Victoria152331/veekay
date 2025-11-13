@@ -170,7 +170,7 @@ veekay::mat4 Camera::view() const {
     yawPitchBasis(rotation.y, rotation.x, right, up, front);
 
     if (g_use_lookat) {
-        return lookAt(position, {position.x+front.x, position.y+front.y, position.z+front.z}, up);
+        return lookAt(position, {position.x+front.x, position.y+front.y, position.z+front.z}, -up);
     } else {
         veekay::mat4 m{};
         m[0][0]= -right.x; m[0][1]= -up.x; m[0][2]= -front.x; m[0][3]= 0.0f;
@@ -730,8 +730,8 @@ void update(double time) {
 
 		if (keyboard::isKeyDown(keyboard::Key::w)) camera.position -= front_xz * move;
 		if (keyboard::isKeyDown(keyboard::Key::s)) camera.position += front_xz * move;
-		if (keyboard::isKeyDown(keyboard::Key::d)) camera.position += right_xz * move;
-		if (keyboard::isKeyDown(keyboard::Key::a)) camera.position -= right_xz * move;
+		if (keyboard::isKeyDown(keyboard::Key::d)) camera.position -= right_xz * move;
+		if (keyboard::isKeyDown(keyboard::Key::a)) camera.position += right_xz * move;
 
 		// Вертикаль: Q вверх, Z вниз (WORLD_UP = {0,-1,0})
 		if (keyboard::isKeyDown(keyboard::Key::q)) camera.position.y -= move;
