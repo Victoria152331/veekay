@@ -9,12 +9,21 @@ layout (location = 1) out vec3 f_normal;
 layout (location = 2) out vec2 f_uv;
 
 layout (binding = 0, std140) uniform SceneUniforms {
-	mat4 view_projection;
+    mat4 view_projection;
+    vec3 view_position;  float _pad0;
+    vec3 ambient_light_intensity; float _pad1;
+    vec3 sun_light_direction; float _pad2;
+    vec3 sun_light_color; float _pad3;
+    uint point_lights_count;
+    uint spot_lights_count;
+    uvec2 _pad4;
 };
 
 layout (binding = 1, std140) uniform ModelUniforms {
-	mat4 model;
-	vec3 albedo_color;
+    mat4 model;
+    vec3 albedo_color;   float _pad5;
+    vec3 specular_color; float _pad6;
+    float shininess;     vec3 _pad7;
 };
 
 void main() {
