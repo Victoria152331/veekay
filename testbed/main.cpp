@@ -68,6 +68,9 @@ struct Camera {
 	// NOTE: View matrix of camera (inverse of a transform)
 	veekay::mat4 view() const;
 
+	// NOTE: Look-at view matrix
+	veekay::mat4 lookat() const;
+
 	// NOTE: View and projection composition
 	veekay::mat4 view_projection(float aspect_ratio) const;
 };
@@ -75,7 +78,7 @@ struct Camera {
 // NOTE: Scene objects
 inline namespace {
 	bool g_use_lookat = false;
-	float g_mouse_sensitivity = 0.12f;
+	float g_mouse_sensitivity = 0.12f * float(M_PI) / 180.0f;
 
 	Camera camera{
 		.position = {0.0f, -0.5f, -3.0f}
@@ -116,12 +119,12 @@ float toRadians(float degrees) {
 static constexpr veekay::vec3 WORLD_UP{0.0f, -1.0f, 0.0f};
 
 // Базис из yaw/pitch (в градусах), без roll — «игровая» камера
-static void yawPitchBasis(float yawDeg, float pitchDeg,
-                          veekay::vec3& right, veekay::vec3& up, veekay::vec3& front) {
-    float yaw = toRadians(yawDeg);
-    float pitch = toRadians(pitchDeg);
-
-    // фронт: -Z при yaw=0,pitch=0
+static void yawPitchBasis(float yaw, float pitch,
+                          veekay::vec3& right,
+                          veekay::vec3& up,
+                          veekay::vec3& front)
+{
+    // фронт: -Z при yaw=0, pitch=0
     front = veekay::vec3::normalized({
         std::cosf(pitch) * std::sinf(yaw), // x
         std::sinf(pitch),                  // y
@@ -132,21 +135,38 @@ static void yawPitchBasis(float yawDeg, float pitchDeg,
 }
 
 // Классический lookAt (row-major)
-static veekay::mat4 lookAt(const veekay::vec3& eye,
-                           const veekay::vec3& center,
-                           const veekay::vec3& up) {
-    veekay::vec3 f = veekay::vec3::normalized({center.x-eye.x, center.y-eye.y, center.z-eye.z});
-    veekay::vec3 r = veekay::vec3::normalized(veekay::vec3::cross(f, up));
-    veekay::vec3 u = veekay::vec3::cross(r, f);
+veekay::mat4 Camera::lookat() const {
+    using veekay::vec3;
+    using veekay::mat4;
 
-    veekay::mat4 m{};
-    m[0][0]= r.x; m[0][1]= u.x; m[0][2]= -f.x; m[0][3]= 0.0f;
-    m[1][0]= r.y; m[1][1]= u.y; m[1][2]= -f.y; m[1][3]= 0.0f;
-    m[2][0]= r.z; m[2][1]= u.z; m[2][2]= -f.z; m[2][3]= 0.0f;
-    m[3][0]= -veekay::vec3::dot(r, eye);
-    m[3][1]= -veekay::vec3::dot(u, eye);
-    m[3][2]=  veekay::vec3::dot(f, eye);
-    m[3][3]=  1.0f;
+    // 1) Строим базис камеры из rotation (в радианах)
+    vec3 right, up, front;
+    yawPitchBasis(rotation.y, rotation.x, right, up, front);
+
+    vec3 eye    = position;
+    vec3 center = { eye.x + front.x,
+                    eye.y + front.y,
+                    eye.z + front.z };
+
+    // 2) Классический lookAt (row-major), но up берём как -up,
+    //    т.к. у нас WORLD_UP = (0, -1, 0) и так камера "выпрямлена"
+    vec3 up_vec = -up;
+
+    vec3 f = vec3::normalized({ center.x - eye.x,
+                                center.y - eye.y,
+                                center.z - eye.z });   // forward
+    vec3 r = vec3::normalized(vec3::cross(f, up_vec)); // right
+    vec3 u = vec3::cross(r, f);                        // up
+
+    mat4 m{};
+    m[0][0] = r.x; m[0][1] = u.x; m[0][2] = -f.x; m[0][3] = 0.0f;
+    m[1][0] = r.y; m[1][1] = u.y; m[1][2] = -f.y; m[1][3] = 0.0f;
+    m[2][0] = r.z; m[2][1] = u.z; m[2][2] = -f.z; m[2][3] = 0.0f;
+    m[3][0] = -vec3::dot(r, eye);
+    m[3][1] = -vec3::dot(u, eye);
+    m[3][2] =  vec3::dot(f, eye);
+    m[3][3] =  1.0f;
+
     return m;
 }
 
@@ -155,9 +175,9 @@ veekay::mat4 Transform::matrix() const {
     mat4 S = mat4::scaling(scale);
 
     // Порядок при row-major с умножением справа налево: R = Rz * Rx * Ry
-    mat4 Rz = mat4::rotation(vec3{0,0,1}, toRadians(rotation.z));
-    mat4 Rx = mat4::rotation(vec3{1,0,0}, toRadians(rotation.x));
-    mat4 Ry = mat4::rotation(vec3{0,1,0}, toRadians(rotation.y));
+    mat4 Rz = mat4::rotation(vec3{0,0,1}, rotation.z);
+    mat4 Rx = mat4::rotation(vec3{1,0,0}, rotation.x);
+    mat4 Ry = mat4::rotation(vec3{0,1,0}, rotation.y);
     mat4 R  = Rz * Rx * Ry;
 
     mat4 T = mat4::translation(position);
@@ -167,27 +187,27 @@ veekay::mat4 Transform::matrix() const {
 
 veekay::mat4 Camera::view() const {
     veekay::vec3 right, up, front;
+    // rotation.x, rotation.y — уже в радианах
     yawPitchBasis(rotation.y, rotation.x, right, up, front);
 
-    if (g_use_lookat) {
-        return lookAt(position, {position.x+front.x, position.y+front.y, position.z+front.z}, -up);
-    } else {
-        veekay::mat4 m{};
-        m[0][0]= -right.x; m[0][1]= -up.x; m[0][2]= -front.x; m[0][3]= 0.0f;
-        m[1][0]= -right.y; m[1][1]= -up.y; m[1][2]= -front.y; m[1][3]= 0.0f;
-        m[2][0]= -right.z; m[2][1]= -up.z; m[2][2]= -front.z; m[2][3]= 0.0f;
-        m[3][0]= veekay::vec3::dot(right, position);
-        m[3][1]=  veekay::vec3::dot(up, position);
-        m[3][2]=  veekay::vec3::dot(front, position);
-        m[3][3]=  1.0f;
-        return m;
-    }
+    // Матрица вида (как на слайдах): смена базиса + обратная трансляция.
+    veekay::mat4 m{};
+    m[0][0] = -right.x; m[0][1] = -up.x; m[0][2] = -front.x; m[0][3] = 0.0f;
+    m[1][0] = -right.y; m[1][1] = -up.y; m[1][2] = -front.y; m[1][3] = 0.0f;
+    m[2][0] = -right.z; m[2][1] = -up.z; m[2][2] = -front.z; m[2][3] = 0.0f;
+    m[3][0] =  veekay::vec3::dot(right,  position);
+    m[3][1] =  veekay::vec3::dot(up,     position);
+    m[3][2] =  veekay::vec3::dot(front,  position);
+    m[3][3] =  1.0f;
+    return m;
 }
 
 veekay::mat4 Camera::view_projection(float aspect_ratio) const {
 	auto projection = veekay::mat4::projection(fov, aspect_ratio, near_plane, far_plane);
 
-	return view() * projection;
+	veekay::mat4 view_matrix = g_use_lookat ? lookat() : view();
+
+	return view_matrix * projection;
 }
 
 // NOTE: Loads shader byte code from file
@@ -699,7 +719,10 @@ void shutdown() {
 void update(double time) {
 	ImGui::Begin("Controls:");
 	ImGui::Checkbox("Use LookAt", &g_use_lookat);
-	ImGui::SliderFloat("Mouse sensitivity", &g_mouse_sensitivity, 0.02f, 0.5f, "%.2f deg/pix");
+	ImGui::SliderFloat("Mouse sensitivity",
+                   &g_mouse_sensitivity,
+                   0.001f, 0.01f,
+                   "%.4f rad/pix");
 	ImGui::Text("LMB: look | WASD: move XZ | Q/Z: up/down");
 	ImGui::End();
 
@@ -709,14 +732,20 @@ void update(double time) {
 		// Поворот мышью при зажатой ЛКМ
 		if (mouse::isButtonDown(mouse::Button::left)) {
 			auto delta = mouse::cursorDelta();
+
+			// rotation.x, rotation.y — в радианах
 			camera.rotation.y += delta.x * g_mouse_sensitivity;
 			camera.rotation.x += delta.y * g_mouse_sensitivity;
 
-			// Кламп pitch, нормализация yaw
-			if (camera.rotation.x >  89.0f) camera.rotation.x =  89.0f;
-			if (camera.rotation.x < -89.0f) camera.rotation.x = -89.0f;
-			if (camera.rotation.y >  180.0f) camera.rotation.y -= 360.0f;
-			if (camera.rotation.y < -180.0f) camera.rotation.y += 360.0f;
+			// Кламп pitch, нормализация yaw (в радианах)
+			const float pitch_limit = toRadians(89.0f);
+			const float yaw_limit   = float(M_PI); // π ~ 180°
+
+			if (camera.rotation.x >  pitch_limit) camera.rotation.x =  pitch_limit;
+			if (camera.rotation.x < -pitch_limit) camera.rotation.x = -pitch_limit;
+
+			if (camera.rotation.y >  yaw_limit)   camera.rotation.y -= 2.0f * yaw_limit; // 2π
+			if (camera.rotation.y < -yaw_limit)   camera.rotation.y += 2.0f * yaw_limit;
 		}
 
 		// Обновляем локальный базис из yaw/pitch
