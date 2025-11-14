@@ -95,6 +95,9 @@ void main() {
         float distance = length(light.position - f_position);
         
         if (distance > light.radius) continue;
+
+		float ndotl = dot(normal, lightDir / max(distance, 0.0001));
+    	if (ndotl <= 0.0) continue;
         
         float cosTheta = dot(lightDir, normalize(-light.direction));
         if (cosTheta < light.angle_cos) continue;

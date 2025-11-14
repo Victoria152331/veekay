@@ -770,10 +770,11 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color = veekay::vec3{1.0f, 1.0f, 1.0f}
 	});
 
+	// Левый куб — матовый красный пластик
 	models.emplace_back(Model{
 		.mesh          = cube_mesh,
 		.transform     = Transform{
-			{-2.0f, -0.5f, -1.5f},
+			.position = {-2.0f, -0.5f, -1.5f},
 		},
 		.albedo_color  = { 1.0f, 0.1f, 0.1f },
 		.specular_color= { 0.05f, 0.05f, 0.05f }, // почти нет блика
@@ -803,13 +804,13 @@ void initialize(VkCommandBuffer cmd) {
 	});
 
 	point_lights.emplace_back(PointLight{
-		.position = { 0.0f, 3.0f, 3.0f },   // над центром сцены, чуть ближе к камере
+		.position = { 0.0f, -3.0f, 3.0f },   // над центром сцены, чуть ближе к камере
 		.radius   = 12.0f,
 		.color    = { 1.0f, 0.95f, 0.9f },  // тёплый белый
 	});
 
 	spot_lights.emplace_back(SpotLight{
-		.position  = { -4.0f, 3.0f, 0.0f },                      // слева сверху
+		.position  = { -2.0f, -3.0f, 0.0f },                      // слева сверху
 		.radius    = 15.0f,
 		.direction = veekay::vec3::normalized({ 1.0f, -0.6f, 0.2f }),
 		.angle = std::cosf(toRadians(20.0f)),               // узкий конус ~20°
@@ -888,27 +889,64 @@ void update(double time) {
 
     // --- Первый прожектор ---
     if (!spot_lights.empty() &&
-        ImGui::CollapsingHeader("Spot light 0", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::CollapsingHeader("Spot light 0", ImGuiTreeNodeFlags_DefaultOpen)) {
 
-        SpotLight& sl = spot_lights[0];
+		SpotLight& sl = spot_lights[0];
 
-        ImGui::DragFloat3("Position##SL0", sl.position.elements, 0.05f, -10.0f, 10.0f);
-        ImGui::SliderFloat("Radius##SL0", &sl.radius, 0.1f, 20.0f);
+		// Позиция и радиус как раньше
+		ImGui::DragFloat3("Position##SL0", sl.position.elements, 0.05f, -10.0f, 10.0f);
+		ImGui::SliderFloat("Radius##SL0", &sl.radius, 0.1f, 20.0f);
 
-        // Направление — редактируем, потом нормализуем
-        veekay::vec3 dir_tmp = sl.direction;
-        if (ImGui::DragFloat3("Direction##SL0", dir_tmp.elements, 0.01f, -1.0f, 1.0f)) {
-            sl.direction = veekay::vec3::normalized(dir_tmp);
-        }
+		// ---------- УДОБНЫЙ ВВОД НАПРАВЛЕНИЯ: YAW + PITCH ----------
 
-        // Угол конуса в градусах (в структуре хранится cos(angle))
-        float angle_deg = std::acosf(std::clamp(sl.angle, -1.0f, 1.0f)) * 180.0f / float(M_PI);
-        if (ImGui::SliderFloat("Angle (deg)##SL0", &angle_deg, 5.0f, 60.0f)) {
-            sl.angle = std::cosf(toRadians(angle_deg));
-        }
+		// Считаем текущие углы из направления (dir должен быть нормализован)
+		veekay::vec3 dir = sl.direction;
+		if (veekay::vec3::squaredLength(dir) < 1e-6f) {
+			dir = {0.0f, -1.0f, 0.0f}; // безопасное дефолтное направление
+		}
 
-        ImGui::ColorEdit3("Color##SL0", sl.color.elements);
-    }
+		// yaw: поворот вокруг Y (в градусах)
+		// pitch: наклон вверх/вниз (в градусах)
+		float yaw   = std::atan2f(dir.x, dir.z); // [-pi, pi]
+		float pitch = std::asinf(-dir.y);        // [-pi/2, pi/2]
+
+		float yaw_deg   = yaw   * 180.0f / float(M_PI);
+		float pitch_deg = pitch * 180.0f / float(M_PI);
+
+		// Редактируем углы
+		if (ImGui::SliderFloat("Yaw (deg)##SL0", &yaw_deg,   -180.0f, 180.0f) |
+			ImGui::SliderFloat("Pitch (deg)##SL0", &pitch_deg, -80.0f, 80.0f)) {
+
+			// Переводим обратно в радианы
+			yaw   = toRadians(yaw_deg);
+			pitch = toRadians(pitch_deg);
+
+			// Восстанавливаем направление из углов
+			veekay::vec3 new_dir;
+			new_dir.x = std::sinf(yaw) * std::cosf(pitch);
+			new_dir.y = -std::sinf(pitch);
+			new_dir.z = std::cosf(yaw) * std::cosf(pitch);
+
+			sl.direction = veekay::vec3::normalized(new_dir);
+		}
+
+		// Доп. кнопка: направить прожектор на камеру (очень удобно для дебага)
+		if (ImGui::Button("Look at camera##SL0")) {
+			veekay::vec3 to_cam = camera.position - sl.position;
+			if (veekay::vec3::squaredLength(to_cam) > 1e-6f) {
+				sl.direction = veekay::vec3::normalized(to_cam);
+			}
+		}
+
+		// ---------- Угол конуса и цвет ----------
+
+		float angle_deg = std::acosf(std::clamp(sl.angle, -1.0f, 1.0f)) * 180.0f / float(M_PI);
+		if (ImGui::SliderFloat("Angle (deg)##SL0", &angle_deg, 5.0f, 60.0f)) {
+			sl.angle = std::cosf(toRadians(angle_deg));
+		}
+
+		ImGui::ColorEdit3("Color##SL0", sl.color.elements);
+	}
 
     ImGui::End();
 
