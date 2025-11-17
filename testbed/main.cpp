@@ -76,6 +76,7 @@ struct Camera {
 
 	veekay::vec3 position = {};
 	veekay::vec3 rotation = {};
+	veekay::vec3 forward = {};
 
 	float fov = default_fov;
 	float near_plane = default_near_plane;
@@ -166,7 +167,7 @@ float toRadians(float degrees) {
 static constexpr veekay::vec3 WORLD_UP{0.0f, -1.0f, 0.0f};
 
 // Базис из yaw/pitch (в градусах), без roll — «игровая» камера
-static void yawPitchBasis(float yaw, float pitch,
+static void cameraBasis(float yaw, float pitch,
                           veekay::vec3& right,
                           veekay::vec3& up,
                           veekay::vec3& front)
@@ -181,36 +182,26 @@ static void yawPitchBasis(float yaw, float pitch,
     up    = veekay::vec3::cross(right, front);
 }
 
-// Классический lookAt (row-major)
 veekay::mat4 Camera::lookat() const {
     using veekay::vec3;
     using veekay::mat4;
+	
+	vec3 target = forward;
+	vec3 eye    = position;
+    vec3 center = { eye.x + target.x,
+                    eye.y + target.y,
+                    eye.z + target.z };
 
-    // 1) Строим базис камеры из rotation (в радианах)
-    vec3 right, up, front;
-    yawPitchBasis(rotation.y, rotation.x, right, up, front);
-
-    vec3 eye    = position;
-    vec3 center = { eye.x + front.x,
-                    eye.y + front.y,
-                    eye.z + front.z };
-
-    // 2) Классический lookAt (row-major), но up берём как -up,
-    //    т.к. у нас WORLD_UP = (0, -1, 0) и так камера "выпрямлена"
-    vec3 up_vec = -up;
-
-    vec3 f = vec3::normalized({ center.x - eye.x,
-                                center.y - eye.y,
-                                center.z - eye.z });   // forward
-    vec3 r = vec3::normalized(vec3::cross(f, up_vec)); // right
-    vec3 u = vec3::cross(r, f);                        // up
+    vec3 f = forward;
+    vec3 r = vec3::normalized(vec3::cross(f, WORLD_UP));
+    vec3 u = vec3::cross(r, f);
 
     mat4 m{};
-    m[0][0] = r.x; m[0][1] = u.x; m[0][2] = -f.x; m[0][3] = 0.0f;
-    m[1][0] = r.y; m[1][1] = u.y; m[1][2] = -f.y; m[1][3] = 0.0f;
-    m[2][0] = r.z; m[2][1] = u.z; m[2][2] = -f.z; m[2][3] = 0.0f;
-    m[3][0] = -vec3::dot(r, eye);
-    m[3][1] = -vec3::dot(u, eye);
+    m[0][0] = -r.x; m[0][1] = -u.x; m[0][2] = -f.x; m[0][3] = 0.0f;
+    m[1][0] = -r.y; m[1][1] = -u.y; m[1][2] = -f.y; m[1][3] = 0.0f;
+    m[2][0] = -r.z; m[2][1] = -u.z; m[2][2] = -f.z; m[2][3] = 0.0f;
+    m[3][0] =  vec3::dot(r, eye);
+    m[3][1] =  vec3::dot(u, eye);
     m[3][2] =  vec3::dot(f, eye);
     m[3][3] =  1.0f;
 
@@ -221,7 +212,6 @@ veekay::mat4 Transform::matrix() const {
     using veekay::vec3; using veekay::mat4;
     mat4 S = mat4::scaling(scale);
 
-    // Порядок при row-major с умножением справа налево: R = Rz * Rx * Ry
     mat4 Rz = mat4::rotation(vec3{0,0,1}, rotation.z);
     mat4 Rx = mat4::rotation(vec3{1,0,0}, rotation.x);
     mat4 Ry = mat4::rotation(vec3{0,1,0}, rotation.y);
@@ -234,10 +224,8 @@ veekay::mat4 Transform::matrix() const {
 
 veekay::mat4 Camera::view() const {
     veekay::vec3 right, up, front;
-    // rotation.x, rotation.y — уже в радианах
-    yawPitchBasis(rotation.y, rotation.x, right, up, front);
+    cameraBasis(rotation.y, rotation.x, right, up, front);
 
-    // Матрица вида (как на слайдах): смена базиса + обратная трансляция.
     veekay::mat4 m{};
     m[0][0] = -right.x; m[0][1] = -up.x; m[0][2] = -front.x; m[0][3] = 0.0f;
     m[1][0] = -right.y; m[1][1] = -up.y; m[1][2] = -front.y; m[1][3] = 0.0f;
@@ -893,35 +881,26 @@ void update(double time) {
 
 		SpotLight& sl = spot_lights[0];
 
-		// Позиция и радиус как раньше
 		ImGui::DragFloat3("Position##SL0", sl.position.elements, 0.05f, -10.0f, 10.0f);
 		ImGui::SliderFloat("Radius##SL0", &sl.radius, 0.1f, 20.0f);
 
-		// ---------- УДОБНЫЙ ВВОД НАПРАВЛЕНИЯ: YAW + PITCH ----------
-
-		// Считаем текущие углы из направления (dir должен быть нормализован)
 		veekay::vec3 dir = sl.direction;
 		if (veekay::vec3::squaredLength(dir) < 1e-6f) {
-			dir = {0.0f, -1.0f, 0.0f}; // безопасное дефолтное направление
+			dir = {0.0f, -1.0f, 0.0f};
 		}
 
-		// yaw: поворот вокруг Y (в градусах)
-		// pitch: наклон вверх/вниз (в градусах)
 		float yaw   = std::atan2f(dir.x, dir.z); // [-pi, pi]
 		float pitch = std::asinf(-dir.y);        // [-pi/2, pi/2]
 
 		float yaw_deg   = yaw   * 180.0f / float(M_PI);
 		float pitch_deg = pitch * 180.0f / float(M_PI);
 
-		// Редактируем углы
 		if (ImGui::SliderFloat("Yaw (deg)##SL0", &yaw_deg,   -180.0f, 180.0f) |
 			ImGui::SliderFloat("Pitch (deg)##SL0", &pitch_deg, -80.0f, 80.0f)) {
 
-			// Переводим обратно в радианы
 			yaw   = toRadians(yaw_deg);
 			pitch = toRadians(pitch_deg);
 
-			// Восстанавливаем направление из углов
 			veekay::vec3 new_dir;
 			new_dir.x = std::sinf(yaw) * std::cosf(pitch);
 			new_dir.y = -std::sinf(pitch);
@@ -930,15 +909,12 @@ void update(double time) {
 			sl.direction = veekay::vec3::normalized(new_dir);
 		}
 
-		// Доп. кнопка: направить прожектор на камеру (очень удобно для дебага)
 		if (ImGui::Button("Look at camera##SL0")) {
 			veekay::vec3 to_cam = camera.position - sl.position;
 			if (veekay::vec3::squaredLength(to_cam) > 1e-6f) {
 				sl.direction = veekay::vec3::normalized(to_cam);
 			}
 		}
-
-		// ---------- Угол конуса и цвет ----------
 
 		float angle_deg = std::acosf(std::clamp(sl.angle, -1.0f, 1.0f)) * 180.0f / float(M_PI);
 		if (ImGui::SliderFloat("Angle (deg)##SL0", &angle_deg, 5.0f, 60.0f)) {
@@ -968,15 +944,19 @@ void update(double time) {
 			if (camera.rotation.x >  pitch_limit) camera.rotation.x =  pitch_limit;
 			if (camera.rotation.x < -pitch_limit) camera.rotation.x = -pitch_limit;
 
-			if (camera.rotation.y >  yaw_limit)   camera.rotation.y -= 2.0f * yaw_limit; // 2π
+			if (camera.rotation.y >  yaw_limit)   camera.rotation.y -= 2.0f * yaw_limit;
 			if (camera.rotation.y < -yaw_limit)   camera.rotation.y += 2.0f * yaw_limit;
+
+			camera.forward = veekay::vec3::normalized({
+				std::cosf(camera.rotation.x) * std::sinf(camera.rotation.y),
+				std::sinf(camera.rotation.x),
+				-std::cosf(camera.rotation.x) * std::cosf(camera.rotation.y)
+			});
 		}
 
-		// Обновляем локальный базис из yaw/pitch
 		veekay::vec3 right, up, front;
-		yawPitchBasis(camera.rotation.y, camera.rotation.x, right, up, front);
+		cameraBasis(camera.rotation.y, camera.rotation.x, right, up, front);
 
-		// Движение в плоскости XZ относительно направления взгляда
 		veekay::vec3 front_xz = veekay::vec3::normalized({front.x, 0.0f, front.z});
 		veekay::vec3 right_xz = veekay::vec3::normalized({right.x, 0.0f, right.z});
 		const float move = 0.1f;
