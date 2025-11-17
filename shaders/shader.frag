@@ -49,13 +49,10 @@ layout(binding = 3, std430) readonly buffer SpotLights {
     SpotLight spot_lights[];
 };
 
-// Функция для расчета освещения по модели Блинна-Фонга
 vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightColor) {
-    // diffuse
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 diffuse = diff * model.albedo_color * lightColor;
     
-    // specular
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(normal, halfwayDir), 0.0), model.shininess);
     vec3 specular = spec * model.specular_color * lightColor;
@@ -79,7 +76,7 @@ void main() {
         
         if (distance > light.radius) continue;
 
-		float ndotl = dot(normal, lightDir / max(distance, 0.0001));
+		float ndotl = dot(normal, lightDir);
     	if (ndotl <= 0.0) continue;
         
         float attenuation = 1.0 - (distance / max(light.radius, 0.0001));
@@ -96,7 +93,7 @@ void main() {
         
         if (distance > light.radius) continue;
 
-		float ndotl = dot(normal, lightDir / max(distance, 0.0001));
+		float ndotl = dot(normal, lightDir);
     	if (ndotl <= 0.0) continue;
         
         float cosTheta = dot(lightDir, normalize(-light.direction));

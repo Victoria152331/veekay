@@ -755,7 +755,9 @@ void initialize(VkCommandBuffer cmd) {
 	models.emplace_back(Model{
 		.mesh = plane_mesh,
 		.transform = Transform{},
-		.albedo_color = veekay::vec3{1.0f, 1.0f, 1.0f}
+		.albedo_color = veekay::vec3{1.0f, 1.0f, 1.0f},
+		.specular_color= { 0.05f, 0.05f, 0.05f },
+		.shininess     = 8.0f,
 	});
 
 	// Левый куб — матовый красный пластик
