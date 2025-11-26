@@ -156,8 +156,8 @@ inline namespace {
 	veekay::graphics::Texture* missing_texture;
 	VkSampler missing_texture_sampler;
 
-	veekay::graphics::Texture* texture;
-	VkSampler texture_sampler;
+	std::vector<veekay::graphics::Texture*> textures;
+	std::vector<VkSampler> texture_samplers;
 }
 
 float toRadians(float degrees) {
@@ -441,7 +441,6 @@ void initialize(VkCommandBuffer cmd) {
 					.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 					.descriptorCount = 8,
 				},
-
 			};
 			
 			VkDescriptorPoolCreateInfo info{
@@ -486,6 +485,19 @@ void initialize(VkCommandBuffer cmd) {
 					.descriptorCount = 1,
 					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
 				},
+				{
+					.binding = 4,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.descriptorCount = 1,
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+				{
+					.binding = 5,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.descriptorCount = 1,
+					.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+				},
+
 			};
 
 			VkDescriptorSetLayoutCreateInfo info{
@@ -579,7 +591,7 @@ void initialize(VkCommandBuffer cmd) {
 	);
 
 	// NOTE: This texture and sampler is used when texture could not be loaded
-	{
+	{ // missing texture
 		VkSamplerCreateInfo info{
 			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -599,6 +611,163 @@ void initialize(VkCommandBuffer cmd) {
 		missing_texture = new veekay::graphics::Texture(cmd, 2, 2,
 		                                                VK_FORMAT_B8G8R8A8_UNORM,
 		                                                pixels);
+	}
+
+	{ // marble_diff
+		veekay::graphics::Texture* texture = missing_texture;
+		VkSampler texture_sampler = missing_texture_sampler;
+
+		uint32_t width, height;
+		std::vector<uint8_t> pixels;
+		if (lodepng::decode(pixels, width, height, "./assets/marble_diff.png")) {
+			std::cerr << "Failed to load texture\n";
+		}
+
+		texture = new veekay::graphics::Texture(
+		cmd, width, height,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		pixels.data());
+		
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR, // Фильтрация если плотность текселей меньше
+			.minFilter = VK_FILTER_LINEAR, // Фильтрация если плотность больше
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
+			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.anisotropyEnable = true, // Включить анизотропную фильтрацию?
+			.maxAnisotropy = 16.0f,   // Кол-во сэмплов анизотропной фильтрации
+			.minLod = 0.0f, // Минимальный уровень мипа
+			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+		};
+
+		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create texture sampler\n";
+			texture = missing_texture;
+			texture_sampler = missing_texture_sampler;
+		}
+
+		textures.push_back(texture);
+		texture_samplers.push_back(texture_sampler);
+	}
+	{ // marble_spec
+		veekay::graphics::Texture* texture = missing_texture;
+		VkSampler texture_sampler = missing_texture_sampler;
+
+		uint32_t width, height;
+		std::vector<uint8_t> pixels;
+		if (lodepng::decode(pixels, width, height, "./assets/marble_spec.png")) {
+			std::cerr << "Failed to load texture\n";
+		}
+
+		texture = new veekay::graphics::Texture(
+		cmd, width, height,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		pixels.data());
+		
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR, // Фильтрация если плотность текселей меньше
+			.minFilter = VK_FILTER_LINEAR, // Фильтрация если плотность больше
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
+			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.anisotropyEnable = true, // Включить анизотропную фильтрацию?
+			.maxAnisotropy = 16.0f,   // Кол-во сэмплов анизотропной фильтрации
+			.minLod = 0.0f, // Минимальный уровень мипа
+			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+		};
+
+		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create texture sampler\n";
+			texture = missing_texture;
+			texture_sampler = missing_texture_sampler;
+		}
+
+		textures.push_back(texture);
+		texture_samplers.push_back(texture_sampler);
+	}
+	{ // linen_diff
+		veekay::graphics::Texture* texture = missing_texture;
+		VkSampler texture_sampler = missing_texture_sampler;
+
+		uint32_t width, height;
+		std::vector<uint8_t> pixels;
+		if (lodepng::decode(pixels, width, height, "./assets/linen_diff.png")) {
+			std::cerr << "Failed to load texture\n";
+		}
+
+		texture = new veekay::graphics::Texture(
+		cmd, width, height,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		pixels.data());
+		
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR, // Фильтрация если плотность текселей меньше
+			.minFilter = VK_FILTER_LINEAR, // Фильтрация если плотность больше
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
+			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.anisotropyEnable = true, // Включить анизотропную фильтрацию?
+			.maxAnisotropy = 16.0f,   // Кол-во сэмплов анизотропной фильтрации
+			.minLod = 0.0f, // Минимальный уровень мипа
+			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+		};
+
+		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create texture sampler\n";
+			texture = missing_texture;
+			texture_sampler = missing_texture_sampler;
+		}
+
+		textures.push_back(texture);
+		texture_samplers.push_back(texture_sampler);
+	}
+	{ // linen_spec
+		veekay::graphics::Texture* texture = missing_texture;
+		VkSampler texture_sampler = missing_texture_sampler;
+
+		uint32_t width, height;
+		std::vector<uint8_t> pixels;
+		if (lodepng::decode(pixels, width, height, "./assets/linen_spec.png")) {
+			std::cerr << "Failed to load texture\n";
+		}
+
+		texture = new veekay::graphics::Texture(
+		cmd, width, height,
+		VK_FORMAT_R8G8B8A8_UNORM,
+		pixels.data());
+		
+		VkSamplerCreateInfo info{
+			.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+			.magFilter = VK_FILTER_LINEAR, // Фильтрация если плотность текселей меньше
+			.minFilter = VK_FILTER_LINEAR, // Фильтрация если плотность больше
+			.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST, // Фильтрация мип-мапов
+			// Что делать, если по какой-то из осей вышли за границы текстурных коорд-т
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.anisotropyEnable = true, // Включить анизотропную фильтрацию?
+			.maxAnisotropy = 16.0f,   // Кол-во сэмплов анизотропной фильтрации
+			.minLod = 0.0f, // Минимальный уровень мипа
+			.maxLod = VK_LOD_CLAMP_NONE, // Максимальный уровень мипа (тут бескоченость)
+		};
+
+		if (vkCreateSampler(device, &info, nullptr, &texture_sampler) != VK_SUCCESS) {
+			std::cerr << "Failed to create texture sampler\n";
+			texture = missing_texture;
+			texture_sampler = missing_texture_sampler;
+		}
+
+		textures.push_back(texture);
+		texture_samplers.push_back(texture_sampler);
 	}
 
 	{
@@ -622,6 +791,19 @@ void initialize(VkCommandBuffer cmd) {
 				.buffer = spot_lights_buffer->buffer,
 				.offset = 0,
 				.range = max_spot_lights * sizeof(SpotLight),
+			},
+		};
+
+		VkDescriptorImageInfo image_infos[] = {
+			{
+				.sampler = texture_samplers[0],
+				.imageView = textures[0]->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			},
+			{
+				.sampler = texture_samplers[1],
+				.imageView = textures[1]->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			},
 		};
 
@@ -661,6 +843,24 @@ void initialize(VkCommandBuffer cmd) {
 				.descriptorCount = 1,
 				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 				.pBufferInfo = &buffer_infos[3],
+			},
+			{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 4,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.pImageInfo = &image_infos[0],
+			},
+			{
+				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+				.dstSet = descriptor_set,
+				.dstBinding = 5,
+				.dstArrayElement = 0,
+				.descriptorCount = 1,
+				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+				.pImageInfo = &image_infos[1],
 			},
 		};
 

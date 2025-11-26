@@ -49,13 +49,18 @@ layout(binding = 3, std430) readonly buffer SpotLights {
     SpotLight spot_lights[];
 };
 
-vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightColor) {
+layout (binding = 4) uniform sampler2D albedo_texture;
+
+layout (binding = 5) uniform sampler2D specular_texture;
+
+
+vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightColor, vec4 albedo_texel, vec4 spec_texel) {
     float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * model.albedo_color * lightColor;
+    vec3 diffuse = diff * albedo_texel.xyz * model.albedo_color * lightColor;
     
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(normal, halfwayDir), 0.0), model.shininess);
-    vec3 specular = spec * model.specular_color * lightColor;
+    vec3 specular = spec * model.specular_color * spec_texel.xyz * lightColor;
     
     return diffuse + specular;
 }
@@ -63,11 +68,14 @@ vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightCol
 void main() {
     vec3 normal = normalize(f_normal);
     vec3 viewDir = normalize(scene.view_position - f_position);
+
+    vec4 albedo_texel = texture(albedo_texture, f_uv);
+    vec4 spec_texel = texture(specular_texture, f_uv);
     
-    vec3 result = model.albedo_color * scene.ambient_light_intensity;
+    vec3 result = albedo_texel.xyz * model.albedo_color * scene.ambient_light_intensity;
     
     vec3 sunLightDir = normalize(-scene.sun_light_direction);
-    result += calculateBlinnPhong(sunLightDir, normal, viewDir, scene.sun_light_color);
+    result += calculateBlinnPhong(sunLightDir, normal, viewDir, scene.sun_light_color, albedo_texel, spec_texel);
     
     for (uint i = 0u; i < scene.point_lights_count; i++) {
         PointLight light = point_lights[i];
@@ -82,7 +90,7 @@ void main() {
         float attenuation = 1.0 - (distance / max(light.radius, 0.0001));
         attenuation *= attenuation;
         
-        vec3 lighting = calculateBlinnPhong(lightDir, normal, viewDir, light.color);
+        vec3 lighting = calculateBlinnPhong(lightDir, normal, viewDir, light.color, albedo_texel, spec_texel);
         result += lighting * attenuation;
     }
     
@@ -105,7 +113,7 @@ void main() {
         float softEdge = 0.1;
         float angleAttenuation = clamp((cosTheta - light.angle_cos) / softEdge, 0.0, 1.0);
         
-        vec3 lighting = calculateBlinnPhong(lightDir, normal, viewDir, light.color);
+        vec3 lighting = calculateBlinnPhong(lightDir, normal, viewDir, light.color, albedo_texel, spec_texel);
         result += lighting * distanceAttenuation * angleAttenuation;
     }
     
