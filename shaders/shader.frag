@@ -53,6 +53,8 @@ layout (binding = 4) uniform sampler2D albedo_texture;
 
 layout (binding = 5) uniform sampler2D specular_texture;
 
+layout (binding = 6) uniform sampler2D emissive_texture;
+
 
 vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightColor, vec4 albedo_texel, vec4 spec_texel) {
     float diff = max(dot(normal, lightDir), 0.0);
@@ -71,6 +73,7 @@ void main() {
 
     vec4 albedo_texel = texture(albedo_texture, f_uv);
     vec4 spec_texel = texture(specular_texture, f_uv);
+    vec4 emissive_texel = texture(emissive_texture, f_uv);
     
     vec3 result = albedo_texel.xyz * model.albedo_color * scene.ambient_light_intensity;
     
@@ -116,6 +119,9 @@ void main() {
         vec3 lighting = calculateBlinnPhong(lightDir, normal, viewDir, light.color, albedo_texel, spec_texel);
         result += lighting * distanceAttenuation * angleAttenuation;
     }
-    
+    result += emissive_texel.xyz;
+    if (result.x > 1.0) result.x = 1.0;
+    if (result.y > 1.0) result.y = 1.0;
+    if (result.z > 1.0) result.z = 1.0;
     final_color = vec4(result, 1.0);
 }
