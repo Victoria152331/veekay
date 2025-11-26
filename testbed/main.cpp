@@ -18,6 +18,7 @@ namespace {
 constexpr uint32_t max_models = 1024;
 constexpr uint32_t max_point_lights = 16;
 constexpr uint32_t max_spot_lights  = 16;
+constexpr uint32_t materials_count = 2;
 
 struct Vertex {
 	veekay::vec3 position;
@@ -67,6 +68,7 @@ struct Model {
 	veekay::vec3 albedo_color;
 	veekay::vec3 specular_color;
     float shininess;
+	uint32_t material_index;
 };
 
 struct Camera {
@@ -139,7 +141,8 @@ inline namespace {
 
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSetLayout descriptor_set_layout;
-	VkDescriptorSet descriptor_set;
+	
+	VkDescriptorSet material_descriptor_sets[materials_count];
 
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
@@ -445,7 +448,7 @@ void initialize(VkCommandBuffer cmd) {
 			
 			VkDescriptorPoolCreateInfo info{
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-				.maxSets = 1,
+				.maxSets = materials_count,
 				.poolSizeCount = sizeof(pools) / sizeof(pools[0]),
 				.pPoolSizes = pools,
 			};
@@ -515,15 +518,19 @@ void initialize(VkCommandBuffer cmd) {
 		}
 
 		{
+			VkDescriptorSetLayout layouts[materials_count];
+			for (int i = 0; i < materials_count; i++)
+				layouts[i] = descriptor_set_layout;
+
 			VkDescriptorSetAllocateInfo info{
 				.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 				.descriptorPool = descriptor_pool,
-				.descriptorSetCount = 1,
-				.pSetLayouts = &descriptor_set_layout,
+				.descriptorSetCount = materials_count,
+				.pSetLayouts = layouts,
 			};
 
-			if (vkAllocateDescriptorSets(device, &info, &descriptor_set) != VK_SUCCESS) {
-				std::cerr << "Failed to create Vulkan descriptor set\n";
+			if (vkAllocateDescriptorSets(device, &info, material_descriptor_sets) != VK_SUCCESS) {
+				std::cerr << "Failed to create Vulkan descriptor sets\n";
 				veekay::app.running = false;
 				return;
 			}
@@ -794,7 +801,7 @@ void initialize(VkCommandBuffer cmd) {
 			},
 		};
 
-		VkDescriptorImageInfo image_infos[] = {
+		VkDescriptorImageInfo marble_image_infos[] = {
 			{
 				.sampler = texture_samplers[0],
 				.imageView = textures[0]->view,
@@ -807,65 +814,87 @@ void initialize(VkCommandBuffer cmd) {
 			},
 		};
 
-		VkWriteDescriptorSet write_infos[] = {
+		VkDescriptorImageInfo linen_image_infos[] = {
 			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 0,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-				.pBufferInfo = &buffer_infos[0],
+				.sampler = texture_samplers[2],
+				.imageView = textures[2]->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			},
 			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 1,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
-				.pBufferInfo = &buffer_infos[1],
-			},
-			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 2,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				.pBufferInfo = &buffer_infos[2],
-			},
-			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 3,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-				.pBufferInfo = &buffer_infos[3],
-			},
-			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 4,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.pImageInfo = &image_infos[0],
-			},
-			{
-				.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-				.dstSet = descriptor_set,
-				.dstBinding = 5,
-				.dstArrayElement = 0,
-				.descriptorCount = 1,
-				.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-				.pImageInfo = &image_infos[1],
+				.sampler = texture_samplers[3],
+				.imageView = textures[3]->view,
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			},
 		};
 
-		vkUpdateDescriptorSets(device, sizeof(write_infos) / sizeof(write_infos[0]),
-		                       write_infos, 0, nullptr);
+		auto write_material_set = [&](uint32_t material_index,
+                              VkDescriptorSet descriptorset,
+                              VkDescriptorImageInfo* image_infos) {
+			VkWriteDescriptorSet writes[] = {
+				{   // SceneUniforms
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 0,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+					.pBufferInfo = &buffer_infos[0],
+				},
+				{   // ModelUniforms
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 1,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+					.pBufferInfo = &buffer_infos[1],
+				},
+				{   // point lights
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 2,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+					.pBufferInfo = &buffer_infos[2],
+				},
+				{   // spot lights
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 3,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+					.pBufferInfo = &buffer_infos[3],
+				},
+				{   // diffuse texture
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 4,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.pImageInfo = &image_infos[0],
+				},
+				{   // specular texture
+					.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+					.dstSet = descriptorset,
+					.dstBinding = 5,
+					.dstArrayElement = 0,
+					.descriptorCount = 1,
+					.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+					.pImageInfo = &image_infos[1],
+				},
+			};
+
+			vkUpdateDescriptorSets(device,
+				uint32_t(std::size(writes)), writes, 0, nullptr);
+		};
+
+		// marble material
+		write_material_set(0, material_descriptor_sets[0], marble_image_infos);
+		// linen material
+		write_material_set(1, material_descriptor_sets[1], linen_image_infos);
 	}
 
 	// NOTE: Plane mesh initialization
@@ -958,6 +987,7 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color = veekay::vec3{1.0f, 1.0f, 1.0f},
 		.specular_color= { 0.05f, 0.05f, 0.05f },
 		.shininess     = 8.0f,
+		.material_index = 0,
 	});
 
 	// Левый куб — матовый красный пластик
@@ -969,6 +999,7 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color  = { 1.0f, 0.1f, 0.1f },
 		.specular_color= { 0.05f, 0.05f, 0.05f }, // почти нет блика
 		.shininess     = 8.0f,                   // широкий, размазанный блик
+		.material_index = 1,
 	});
 
 	// Центральный куб — глянцевый синий пластик
@@ -980,6 +1011,7 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color  = { 0.1f, 0.1f, 1.0f },
 		.specular_color= { 0.6f, 0.6f, 0.6f },   // заметный блик
 		.shininess     = 32.0f,                  // более узкий блик
+		.material_index = 1,
 	});
 
 	// Правый куб — “металл” / хром
@@ -991,6 +1023,7 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color  = { 0.1f, 0.9f, 0.1f },
 		.specular_color= { 1.0f, 1.0f, 1.0f },   // очень сильный белый блик
 		.shininess     = 128.0f,                 // острый маленький блик
+		.material_index = 1,
 	});
 
 	point_lights.emplace_back(PointLight{
@@ -1287,7 +1320,7 @@ void render(VkCommandBuffer cmd, VkFramebuffer framebuffer) {
 
 		uint32_t offset = i * model_uniorms_alignment;
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
-		                    0, 1, &descriptor_set, 1, &offset);
+		                    0, 1, &material_descriptor_sets[model.material_index], 1, &offset);
 
 		vkCmdDrawIndexed(cmd, mesh.indices, 1, 0, 0, 0);
 	}
