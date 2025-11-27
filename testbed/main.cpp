@@ -38,6 +38,7 @@ struct SceneUniforms {
 	uint32_t point_lights_count;
     uint32_t spot_lights_count;
     uint32_t _pad4[2];
+	float curve; float _pad5[3];
 };
 
 struct ModelUniforms {
@@ -118,6 +119,8 @@ inline namespace {
 	veekay::vec3 g_ambient = { 0.15f, 0.15f, 0.15f };
 	veekay::vec3 g_sun_dir = veekay::vec3::normalized({ -0.3f, 1.0f, -0.2f });
 	veekay::vec3 g_sun_color = {0.5f, 0.5f, 0.5f};
+
+	float texture_curve = 1.0f;
 
 	Camera camera{
 		.position = {0.0f, -0.5f, -3.0f}
@@ -1212,19 +1215,19 @@ void initialize(VkCommandBuffer cmd) {
 		.material_index = 0,
 	});
 
-	// Левый куб — матовый красный пластик
+	// Дом
 	models.emplace_back(Model{
 		.mesh          = cube_mesh,
 		.transform     = Transform{
 			.position = {-2.0f, -0.5f, -1.5f},
 		},
-		.albedo_color  = { 1.0f, 0.1f, 0.1f },
-		.specular_color= { 0.05f, 0.05f, 0.05f }, // почти нет блика
-		.shininess     = 8.0f,                   // широкий, размазанный блик
+		.albedo_color  = { 1.0f, 1.0f, 1.0f },
+		.specular_color= { 1.0f, 1.0f, 1.0f }, // почти нет блика
+		.shininess     = 32.0f,                   // широкий, размазанный блик
 		.material_index = 2,
 	});
 
-	// Центральный куб — глянцевый синий пластик
+	// Синий куб
 	models.emplace_back(Model{
 		.mesh          = cube_mesh,
 		.transform     = Transform{
@@ -1236,7 +1239,7 @@ void initialize(VkCommandBuffer cmd) {
 		.material_index = 1,
 	});
 
-	// Правый куб — “металл” / хром
+	// Зелёный куб
 	models.emplace_back(Model{
 		.mesh          = cube_mesh,
 		.transform     = Transform{
@@ -1245,7 +1248,7 @@ void initialize(VkCommandBuffer cmd) {
 		.albedo_color  = { 0.1f, 0.9f, 0.1f },
 		.specular_color= { 1.0f, 1.0f, 1.0f },   // очень сильный белый блик
 		.shininess     = 128.0f,                 // острый маленький блик
-		.material_index = 1,
+		.material_index = 0,
 	});
 
 	point_lights.emplace_back(PointLight{
@@ -1307,6 +1310,10 @@ void update(double time) {
                    &g_mouse_sensitivity,
                    0.001f, 0.01f,
                    "%.4f rad/pix");
+	ImGui::SliderFloat("Texture curve",
+                   &texture_curve,
+                   0.0f, 10.0f,
+                   "%.1f");
 	ImGui::Text("LMB: look | WASD: move XZ | Q/Z: up/down");
 	ImGui::Separator();
 
@@ -1445,7 +1452,8 @@ void update(double time) {
 		.sun_light_direction = g_sun_dir,
 		.sun_light_color = g_sun_color,
 		.point_lights_count = static_cast<uint32_t>(point_lights.size()),
-		.spot_lights_count = static_cast<uint32_t>(spot_lights.size())
+		.spot_lights_count = static_cast<uint32_t>(spot_lights.size()),
+		.curve = texture_curve,
 	};
 
 	std::vector<ModelUniforms> model_uniforms(models.size());

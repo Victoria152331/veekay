@@ -17,6 +17,7 @@ layout (binding = 0, std140) uniform SceneUniforms {
     uint point_lights_count;
     uint spot_lights_count;
     uvec2 _pad4;
+    float curve; float _pad8[3];
 };
 
 layout (binding = 1, std140) uniform ModelUniforms {

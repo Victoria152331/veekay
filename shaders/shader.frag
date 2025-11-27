@@ -30,7 +30,8 @@ layout(binding = 0, std140) uniform SceneUniforms {
     vec3 sun_light_color; float _pad3;
     uint point_lights_count;
     uint spot_lights_count;
-    uint _pad4[2];
+    uvec2 _pad4;
+    float curve; float _pad5[3];
 } scene;
 
 layout (binding = 1, std140) uniform ModelUniforms {
@@ -71,9 +72,13 @@ void main() {
     vec3 normal = normalize(f_normal);
     vec3 viewDir = normalize(scene.view_position - f_position);
 
-    vec4 albedo_texel = texture(albedo_texture, f_uv);
-    vec4 spec_texel = texture(specular_texture, f_uv);
-    vec4 emissive_texel = texture(emissive_texture, f_uv);
+    vec2 strange_uv = { f_uv.x + cos(f_uv.y * 100) / 100, f_uv.y};
+    vec2 strange_curve_uv = { f_uv.x + cos(f_uv.y * 100)  * scene.curve / 100, f_uv.y};
+
+    vec2 cur_uv = strange_curve_uv;
+    vec4 albedo_texel = texture(albedo_texture, cur_uv);
+    vec4 spec_texel = texture(specular_texture, cur_uv);
+    vec4 emissive_texel = texture(emissive_texture, cur_uv);
     
     vec3 result = albedo_texel.xyz * model.albedo_color * scene.ambient_light_intensity;
     
