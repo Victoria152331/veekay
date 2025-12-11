@@ -150,6 +150,8 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 			.samplerAnisotropy = true,
 		};
 
+		physical_device_selector.add_required_extension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+
 		auto selector_result = physical_device_selector.set_surface(vk_surface)
 		                                               .set_required_features(device_features)
 		                                               .select();
@@ -162,6 +164,12 @@ int veekay::run(const veekay::ApplicationInfo& app_info) {
 
 		{
 			vkb::DeviceBuilder device_builder(physical_device);
+			VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features{
+				.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+				.dynamicRendering = VK_TRUE,
+			};
+
+			device_builder.add_pNext(&dynamic_rendering_features);
 
 			auto result = device_builder.build();
 

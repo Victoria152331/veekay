@@ -19,11 +19,13 @@ struct SpotLight {
 layout (location = 0) in vec3 f_position;
 layout (location = 1) in vec3 f_normal;
 layout (location = 2) in vec2 f_uv;
+layout (location = 3) in vec4 f_shadow_position;
 
 layout (location = 0) out vec4 final_color;
 
 layout(binding = 0, std140) uniform SceneUniforms {
     mat4 view_projection;
+    mat4 shadow_projection;
     vec3 view_position; float _pad0;
     vec3 ambient_light_intensity; float _pad1;
     vec3 sun_light_direction; float _pad2;
@@ -56,6 +58,8 @@ layout (binding = 5) uniform sampler2D specular_texture;
 
 layout (binding = 6) uniform sampler2D emissive_texture;
 
+layout (binding = 7) uniform sampler2DShadow shadow_texture;
+
 
 vec3 calculateBlinnPhong(vec3 lightDir, vec3 normal, vec3 viewDir, vec3 lightColor, vec4 albedo_texel, vec4 spec_texel) {
     float diff = max(dot(normal, lightDir), 0.0);
@@ -79,11 +83,16 @@ void main() {
     vec4 albedo_texel = texture(albedo_texture, cur_uv);
     vec4 spec_texel = texture(specular_texture, cur_uv);
     vec4 emissive_texel = texture(emissive_texture, cur_uv);
+
+    vec3 shadow_coord = f_shadow_position.xyz / f_shadow_position.w;
+    shadow_coord.xy = shadow_coord.xy * 0.5 + 0.5;
+    shadow_coord.z = shadow_coord.z;
+    float shadow_factor = texture(shadow_texture, shadow_coord);
     
     vec3 result = albedo_texel.xyz * model.albedo_color * scene.ambient_light_intensity;
     
     vec3 sunLightDir = normalize(-scene.sun_light_direction);
-    result += calculateBlinnPhong(sunLightDir, normal, viewDir, scene.sun_light_color, albedo_texel, spec_texel);
+    result += shadow_factor * calculateBlinnPhong(sunLightDir, normal, viewDir, scene.sun_light_color, albedo_texel, spec_texel);
     
     for (uint i = 0u; i < scene.point_lights_count; i++) {
         PointLight light = point_lights[i];

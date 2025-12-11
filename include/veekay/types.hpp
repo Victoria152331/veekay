@@ -400,6 +400,23 @@ union mat4 {
 		return result;
 	}
 
+	static mat4 orthographic(float left, float right,
+						float bottom, float top,
+						float znear, float zfar) {
+		mat4 result{};
+
+		result[0][0] =  2.0f / (right - left);
+		result[1][1] =  2.0f / (top - bottom);
+		result[2][2] =  1.0f / (zfar - znear);
+
+		result[3][0] = -(right + left)   / (right - left);
+		result[3][1] = -(top + bottom)   / (top - bottom);
+		result[3][2] = -znear / (zfar - znear);
+		result[3][3] =  1.0f;
+
+		return result;
+	}
+
 	static mat4 transpose(const mat4& matrix) {
 		mat4 result{};
 

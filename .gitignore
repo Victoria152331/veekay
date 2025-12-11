@@ -2,3 +2,4 @@ build-*/
 build/
 shaders/*.spv
 imgui.ini
+Lecture #8_ Shadowmapping.pdf
